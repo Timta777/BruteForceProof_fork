@@ -36,5 +36,5 @@ def generate_random_bytes(filename, size, chunk_size=1024*1024):
         print(f"An error occurred: {e}")
 
 filename = 'random_bytes.bin'
-size = 3289
+size = 10
 generate_random_bytes(filename, size)
