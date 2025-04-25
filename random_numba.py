@@ -35,6 +35,24 @@ def generate_random_bytes(filename, size, chunk_size=1024*1024):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-filename = 'random_bytes.bin'
-size = 10
-generate_random_bytes(filename, size)
+def get_file_contents(filename):
+    try:
+        with open(filename, 'rb') as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"File '{filename}' not found.")
+        return None
+
+def main():
+    input_filename = 'input_bytes.bin'
+    output_filename = 'random_bytes.bin'
+    input_contents = get_file_contents(input_filename)
+    if input_contents is not None:
+        input_size = len(input_contents)
+        print(f"Input file size: {input_size} bytes")
+        generate_random_bytes(output_filename, input_size)
+    else:
+        print("Exiting due to file not found.")
+
+if __name__ == "__main__":
+    main()
