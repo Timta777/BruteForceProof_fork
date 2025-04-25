@@ -5,5 +5,5 @@ def generate_random_bytes(filename, size):
         f.write(os.urandom(size))
 
 filename = 'random_bytes.bin'
-size = 3289
+size = 10
 generate_random_bytes(filename, size)
