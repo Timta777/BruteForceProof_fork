@@ -1,33 +1,56 @@
-def generate_changes(input_file, target_file, changes_file):
-    # Read the input and target files as binary
-    with open(input_file, 'rb') as f:
-        input_bytes = f.read()
+def read_hex_file(filename):
+    try:
+        with open(filename, 'rb') as file:
+            return file.read()
+    except FileNotFoundError:
+        print(f"File {filename} not found")
+        return None
 
-    with open(target_file, 'rb') as f:
-        target_bytes = f.read()
+def calculate(hex1, hex2, operation):
+    num1 = int(hex1, 16)
+    num2 = int(hex2, 16)
+    if operation == "+":
+        result = (num1 + num2) % 256
+    elif operation == "-":
+        result = (num1 - num2) % 256
+    return result
 
-    # Check if the files have the same length
-    if len(input_bytes) != len(target_bytes):
-        raise ValueError("Files must be the same length")
+def find_second_value(hex1, result):
+    lowest_value = None
+    operation = None
+    for i in range(256):
+        hex2 = hex(i)[2:].upper().zfill(2)
+        if calculate(hex1, hex2, '+') == result:
+            if lowest_value is None or i < int(lowest_value, 16):
+                lowest_value = hex2
+                operation = '+'
+        if calculate(hex1, hex2, '-') == result:
+            if lowest_value is None or i < int(lowest_value, 16):
+                lowest_value = hex2
+                operation = '-'
+    return lowest_value, operation
 
-    # Initialize an empty string to store changes
-    changes = ''
+def main():
+    random_bytes = read_hex_file('random_bytes.bin')
+    input_bytes = read_hex_file('input_bytes.bin')
+    if random_bytes is None or input_bytes is None:
+        return
 
-    # Compare the bytes
-    for i in range(len(input_bytes)):
-        ib = input_bytes[i]
-        tb = target_bytes[i]
-
-        if ib == tb:
-            changes += '&'  # No change if the bytes are equal
-        elif tb > ib:
-            changes += f"-{(tb - ib):02x}"  # Target byte is greater
+    output = ''
+    for i in range(min(len(random_bytes), len(input_bytes))):
+        hex1 = hex(random_bytes[i])[2:].upper().zfill(2)
+        result = input_bytes[i]
+        lowest_value, operation = find_second_value(hex1, result)
+        if lowest_value:
+            if operation == '+':
+                output += f"+{lowest_value}"
+            else:
+                output += f"-{lowest_value}"
         else:
-            changes += f"+{(ib - tb):02x}"  # Input byte is greater
+            output += f"-FF"  # default value if no solution is found
 
-    # Write the changes to the file in one line
-    with open(changes_file, 'w') as f:
-        f.write(changes)
+    with open('changes.txt', 'w') as file:
+        file.write(output)
 
 if __name__ == "__main__":
-    generate_changes("random_bytes.bin", "input_bytes.bin", "changes.txt")
+    main()
