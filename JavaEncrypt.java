@@ -1,19 +1,8 @@
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.HashMap;
+import java.nio.file.*;
+import java.util.*;
 
 public class JavaEncrypt {
-
-    // Reads a binary file into a byte array
-    public static byte[] readHexFile(String filename) {
-        try {
-            return Files.readAllBytes(Paths.get(filename));
-        } catch (IOException e) {
-            System.out.println("File " + filename + " not found");
-            return null;
-        }
-    }
 
     // Loads the conversion table into a HashMap
     public static HashMap<String, Byte> loadConversionTable(String filename) {
@@ -26,7 +15,6 @@ public class JavaEncrypt {
                 String[] parts = line.split("=");
                 String key = parts[0].trim();
                 String value = parts[1].trim();
-                // Parse value as hexadecimal
                 byte byteVal = (byte) Integer.parseInt(value, 16);
                 table.put(key, byteVal);
             }
@@ -37,7 +25,6 @@ public class JavaEncrypt {
     }
 
     // Finds the lowest value (0-255) such that (hex1 + value) % 256 == result or (hex1 - value) % 256 == result
-    // Returns an array: [operation+value, e.g., "+0A" or "-F1"]
     public static String getOpValue(int hex1, int result) {
         for (int i = 0; i < 256; i++) {
             if ((hex1 + i) % 256 == result) {
@@ -51,31 +38,48 @@ public class JavaEncrypt {
     }
 
     public static void main(String[] args) {
-        byte[] randomBytes = readHexFile("random_bytes.bin");
-        byte[] inputBytes = readHexFile("input_bytes.bin");
-        if (randomBytes == null || inputBytes == null) return;
+        String randomFile = "random_bytes.bin";
+        String inputFile = "input_bytes.bin";
+        String tableFile = "conversionTable.txt";
+        String outputFile = "changes.bin";
+        int chunkSize = 1024 * 1024; // 1MB chunks
 
-        HashMap<String, Byte> table = loadConversionTable("conversionTable.txt");
+        HashMap<String, Byte> table = loadConversionTable(tableFile);
 
-        int length = Math.min(randomBytes.length, inputBytes.length);
-        byte[] outputBytes = new byte[length];
+        try (InputStream randStream = new BufferedInputStream(new FileInputStream(randomFile));
+             InputStream inputStream = new BufferedInputStream(new FileInputStream(inputFile));
+             OutputStream outStream = new BufferedOutputStream(new FileOutputStream(outputFile))) {
 
-        for (int i = 0; i < length; i++) {
-            int hex1 = randomBytes[i] & 0xFF;
-            int result = inputBytes[i] & 0xFF;
-            String opVal = getOpValue(hex1, result);
-            if (opVal != null && table.containsKey(opVal)) {
-                outputBytes[i] = table.get(opVal);
-            } else {
-                // If no valid operation, default to 0xFF (or choose another fallback)
-                outputBytes[i] = (byte) 0xFF;
+            byte[] randBuffer = new byte[chunkSize];
+            byte[] inputBuffer = new byte[chunkSize];
+
+            int randRead, inputRead;
+            long processed = 0;
+            while ((randRead = randStream.read(randBuffer)) > 0 &&
+                   (inputRead = inputStream.read(inputBuffer)) > 0) {
+
+                int length = Math.min(randRead, inputRead);
+                byte[] outputBytes = new byte[length];
+
+                for (int i = 0; i < length; i++) {
+                    int hex1 = randBuffer[i] & 0xFF;
+                    int result = inputBuffer[i] & 0xFF;
+                    String opVal = getOpValue(hex1, result);
+                    if (opVal != null && table.containsKey(opVal)) {
+                        outputBytes[i] = table.get(opVal);
+                    } else {
+                        outputBytes[i] = (byte) 0xFF;
+                    }
+                }
+                outStream.write(outputBytes, 0, length);
+                processed += length;
+
+                System.out.printf("\rProcessed %d bytes...", processed);
             }
-        }
+            System.out.println("\nDone!");
 
-        try (FileOutputStream fos = new FileOutputStream("changes.bin")) {
-            fos.write(outputBytes);
         } catch (IOException e) {
-            System.out.println("Error writing changes.bin");
+            System.out.println("Error processing files: " + e.getMessage());
         }
     }
 }
