@@ -18,6 +18,8 @@ public class JavaDecrypt {
     // Loads the conversion table into a Map<Byte, String> for reverse lookup
     public static HashMap<Byte, String> loadReverseTable(String filename) {
         HashMap<Byte, String> reverseTable = new HashMap<>();
+        // For each value, keep the lowest +NN variant
+        HashMap<Byte, String> plusTable = new HashMap<>();
         try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
             String line;
             while ((line = br.readLine()) != null) {
@@ -27,14 +29,24 @@ public class JavaDecrypt {
                 String key = parts[0].trim();
                 String value = parts[1].trim();
                 byte byteVal = (byte) Integer.parseInt(value, 16);
-                // If duplicate values, prefer '+' variant (arbitrary but consistent)
-                if (!reverseTable.containsKey(byteVal) || key.startsWith("+")) {
-                    reverseTable.put(byteVal, key);
+                if (key.startsWith("+")) {
+                    // Only keep the lowest +NN variant for each value
+                    if (!plusTable.containsKey(byteVal) ||
+                        Integer.parseInt(key.substring(1), 16) < Integer.parseInt(plusTable.get(byteVal).substring(1), 16)) {
+                        plusTable.put(byteVal, key);
+                    }
+                } else {
+                    // If no + variant seen yet, allow - variant as fallback
+                    if (!plusTable.containsKey(byteVal)) {
+                        plusTable.put(byteVal, key);
+                    }
                 }
             }
         } catch (IOException e) {
             System.out.println("Error reading conversion table");
         }
+        // Use plusTable for reverseTable
+        reverseTable.putAll(plusTable);
         return reverseTable;
     }
 
@@ -70,7 +82,6 @@ public class JavaDecrypt {
             byte encryptedByte = changesBytes[i];
             int originalByte = recoverOriginalByte(randomByte, encryptedByte, reverseTable);
             if (originalByte == -1) {
-                // Fallback for missing table values
                 outputBytes[i] = (byte) 0xFF;
             } else {
                 outputBytes[i] = (byte) originalByte;
