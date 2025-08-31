@@ -1,24 +1,12 @@
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
+import java.nio.file.*;
+import java.util.*;
 
 public class JavaDecrypt {
-    // Reads a binary file and returns its bytes
-    public static byte[] readHexFile(String filename) {
-        try {
-            return Files.readAllBytes(Paths.get(filename));
-        } catch (IOException e) {
-            System.out.println("File " + filename + " not found");
-            return null;
-        }
-    }
 
     // Loads the conversion table into a Map<Byte, String> for reverse lookup
     public static HashMap<Byte, String> loadReverseTable(String filename) {
         HashMap<Byte, String> reverseTable = new HashMap<>();
-        // For each value, keep the lowest +NN variant
         HashMap<Byte, String> plusTable = new HashMap<>();
         try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
             String line;
@@ -30,13 +18,11 @@ public class JavaDecrypt {
                 String value = parts[1].trim();
                 byte byteVal = (byte) Integer.parseInt(value, 16);
                 if (key.startsWith("+")) {
-                    // Only keep the lowest +NN variant for each value
                     if (!plusTable.containsKey(byteVal) ||
                         Integer.parseInt(key.substring(1), 16) < Integer.parseInt(plusTable.get(byteVal).substring(1), 16)) {
                         plusTable.put(byteVal, key);
                     }
                 } else {
-                    // If no + variant seen yet, allow - variant as fallback
                     if (!plusTable.containsKey(byteVal)) {
                         plusTable.put(byteVal, key);
                     }
@@ -45,7 +31,6 @@ public class JavaDecrypt {
         } catch (IOException e) {
             System.out.println("Error reading conversion table");
         }
-        // Use plusTable for reverseTable
         reverseTable.putAll(plusTable);
         return reverseTable;
     }
@@ -68,30 +53,44 @@ public class JavaDecrypt {
     }
 
     public static void main(String[] args) {
-        byte[] randomBytes = readHexFile("random_bytes.bin");
-        byte[] changesBytes = readHexFile("changes.bin");
-        if (randomBytes == null || changesBytes == null) return;
+        String randomFile = "random_bytes.bin";
+        String changesFile = "changes.bin";
+        String tableFile = "conversionTable.txt";
+        String outputFile = "reversed_bytes.bin";
+        int chunkSize = 1024 * 1024; // 1MB chunks
 
-        Map<Byte, String> reverseTable = loadReverseTable("conversionTable.txt");
+        Map<Byte, String> reverseTable = loadReverseTable(tableFile);
 
-        int length = Math.min(randomBytes.length, changesBytes.length);
-        byte[] outputBytes = new byte[length];
+        try (InputStream randStream = new BufferedInputStream(new FileInputStream(randomFile));
+             InputStream changesStream = new BufferedInputStream(new FileInputStream(changesFile));
+             OutputStream outStream = new BufferedOutputStream(new FileOutputStream(outputFile))) {
 
-        for (int i = 0; i < length; i++) {
-            int randomByte = randomBytes[i] & 0xFF;
-            byte encryptedByte = changesBytes[i];
-            int originalByte = recoverOriginalByte(randomByte, encryptedByte, reverseTable);
-            if (originalByte == -1) {
-                outputBytes[i] = (byte) 0xFF;
-            } else {
-                outputBytes[i] = (byte) originalByte;
+            byte[] randBuffer = new byte[chunkSize];
+            byte[] changesBuffer = new byte[chunkSize];
+
+            int randRead, changesRead;
+            long processed = 0;
+            while ((randRead = randStream.read(randBuffer)) > 0 &&
+                   (changesRead = changesStream.read(changesBuffer)) > 0) {
+
+                int length = Math.min(randRead, changesRead);
+                byte[] outputBytes = new byte[length];
+
+                for (int i = 0; i < length; i++) {
+                    int randomByte = randBuffer[i] & 0xFF;
+                    byte encryptedByte = changesBuffer[i];
+                    int originalByte = recoverOriginalByte(randomByte, encryptedByte, reverseTable);
+                    outputBytes[i] = (originalByte == -1) ? (byte) 0xFF : (byte) originalByte;
+                }
+                outStream.write(outputBytes, 0, length);
+                processed += length;
+
+                System.out.printf("\rProcessed %d bytes...", processed);
             }
-        }
+            System.out.println("\nDone!");
 
-        try (FileOutputStream fos = new FileOutputStream("reversed_bytes.bin")) {
-            fos.write(outputBytes);
         } catch (IOException e) {
-            System.out.println("Error writing reversed_bytes.bin");
+            System.out.println("Error processing files: " + e.getMessage());
         }
     }
 }
