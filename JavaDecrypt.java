@@ -1,6 +1,8 @@
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
 
 public class JavaDecrypt {
     // Reads a binary file and returns its bytes
@@ -13,71 +15,72 @@ public class JavaDecrypt {
         }
     }
 
-    // Reads a text file and returns its content as a String
-    public static String readChangesFile(String filename) {
-        try {
-            return new String(Files.readAllBytes(Paths.get(filename)));
-        } catch (IOException e) {
-            System.out.println("File " + filename + " not found");
-            return null;
-        }
-    }
-
-    // Performs + or - operation in mod 256 arithmetic
-    public static int calculate(String hex1, String hex2, String operation) {
-        int num1 = Integer.parseInt(hex1, 16);
-        int num2 = Integer.parseInt(hex2, 16);
-        int result;
-        if (operation.equals("+")) {
-            result = (num1 + num2) % 256;
-        } else if (operation.equals("-")) {
-            result = (num1 - num2 + 256) % 256;
-        } else {
-            throw new IllegalArgumentException("Unknown operation: " + operation);
-        }
-        return result;
-    }
-
-    // Reverse the changes using the changes string and random bytes
-    public static byte[] reverseChanges(String changes, byte[] randomBytes) {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        int i = 0;
-        int j = 0;
-        while (i < changes.length()) {
-            char op = changes.charAt(i);
-            if (op == '+' || op == '-') {
-                if (i + 3 > changes.length() || j >= randomBytes.length) {
-                    System.out.println("Invalid changes file");
-                    return null;
+    // Loads the conversion table into a Map<Byte, String> for reverse lookup
+    public static HashMap<Byte, String> loadReverseTable(String filename) {
+        HashMap<Byte, String> reverseTable = new HashMap<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || !line.contains("=")) continue;
+                String[] parts = line.split("=");
+                String key = parts[0].trim();
+                String value = parts[1].trim();
+                byte byteVal = (byte) Integer.parseInt(value, 16);
+                // If duplicate values, prefer '+' variant (arbitrary but consistent)
+                if (!reverseTable.containsKey(byteVal) || key.startsWith("+")) {
+                    reverseTable.put(byteVal, key);
                 }
-                String hex2 = changes.substring(i + 1, i + 3);
-                String hex1 = String.format("%02X", randomBytes[j] & 0xFF);
-                int result = calculate(hex1, hex2, String.valueOf(op));
-                output.write(result);
-                i += 3;
-                j += 1;
-            } else {
-                System.out.println("Invalid changes file");
-                return null;
             }
+        } catch (IOException e) {
+            System.out.println("Error reading conversion table");
         }
-        return output.toByteArray();
+        return reverseTable;
+    }
+
+    // Given randomByte and encryptedByte, finds the original input byte
+    public static int recoverOriginalByte(int randomByte, byte encryptedByte, Map<Byte, String> reverseTable) {
+        String opVal = reverseTable.get(encryptedByte);
+        if (opVal == null || opVal.length() < 3) return -1;
+        char op = opVal.charAt(0);
+        int value = Integer.parseInt(opVal.substring(1), 16);
+        int original;
+        if (op == '+') {
+            original = (randomByte + value) % 256;
+        } else if (op == '-') {
+            original = (randomByte - value + 256) % 256;
+        } else {
+            return -1;
+        }
+        return original;
     }
 
     public static void main(String[] args) {
         byte[] randomBytes = readHexFile("random_bytes.bin");
-        String changes = readChangesFile("changes.txt");
-        if (randomBytes == null || changes == null) {
-            return;
+        byte[] changesBytes = readHexFile("changes.bin");
+        if (randomBytes == null || changesBytes == null) return;
+
+        Map<Byte, String> reverseTable = loadReverseTable("conversionTable.txt");
+
+        int length = Math.min(randomBytes.length, changesBytes.length);
+        byte[] outputBytes = new byte[length];
+
+        for (int i = 0; i < length; i++) {
+            int randomByte = randomBytes[i] & 0xFF;
+            byte encryptedByte = changesBytes[i];
+            int originalByte = recoverOriginalByte(randomByte, encryptedByte, reverseTable);
+            if (originalByte == -1) {
+                // Fallback for missing table values
+                outputBytes[i] = (byte) 0xFF;
+            } else {
+                outputBytes[i] = (byte) originalByte;
+            }
         }
 
-        byte[] output = reverseChanges(changes, randomBytes);
-        if (output != null) {
-            try (FileOutputStream fos = new FileOutputStream("reversed_bytes.bin")) {
-                fos.write(output);
-            } catch (IOException e) {
-                System.out.println("Error writing reversed_bytes.bin");
-            }
+        try (FileOutputStream fos = new FileOutputStream("reversed_bytes.bin")) {
+            fos.write(outputBytes);
+        } catch (IOException e) {
+            System.out.println("Error writing reversed_bytes.bin");
         }
     }
 }
